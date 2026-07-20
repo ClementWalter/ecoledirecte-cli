@@ -1,0 +1,5 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+# Never commit the local session/credentials (also lives in ~/.config).
+config.json
