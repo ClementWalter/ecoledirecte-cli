@@ -564,6 +564,11 @@ def decode_b64_text(s: str) -> str:
         return s
 
 
+def is_read(message: dict) -> bool:
+    """Whether a message is read. The API sends ``read`` as the string 'True'/'False'."""
+    return str(message.get("read")).strip().lower() == "true"
+
+
 def safe_filename(name: str, fallback: str) -> str:
     """Return a filesystem-safe basename, never empty and never a path.
 
@@ -894,10 +899,13 @@ def messages(folder: str, year: str | None, as_json: bool) -> None:
                 m.get("date", ""),
                 f"{frm.get('prenom', '')} {frm.get('nom', '')}".strip(),
                 m.get("subject", ""),
-                "" if m.get("read") else "●",
+                "" if is_read(m) else "●",
             )
         console.print(table)
-        console.print(f"[dim]{len(items)} message(s). Read one with: read <ID>[/dim]")
+        unread = sum(1 for m in items if not is_read(m))
+        console.print(
+            f"[dim]{len(items)} message(s), {unread} unread (●). Read one with: read <ID>[/dim]"
+        )
 
     output(data, as_json, render)
 

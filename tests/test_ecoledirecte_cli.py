@@ -20,6 +20,7 @@ from ecoledirecte_cli import (  # noqa: E402
     encode_body,
     get_password,
     html_to_text,
+    is_read,
     list_students,
     mailbox_path,
     module_enabled,
@@ -225,6 +226,22 @@ def test_html_to_text_unescapes_entities():
 
 def test_html_to_text_converts_br_to_newline():
     assert html_to_text("a<br>b<br/>c") == "a\nb\nc"
+
+
+# ---- is_read (the API sends read as a string) -----------------------------
+
+
+def test_is_read_true_string():
+    assert is_read({"read": "True"}) is True
+
+
+def test_is_read_false_string_is_not_read():
+    # The bug this guards: "False" is a truthy string, so a naive check misfires.
+    assert is_read({"read": "False"}) is False
+
+
+def test_is_read_missing_is_not_read():
+    assert is_read({}) is False
 
 
 # ---- safe_filename --------------------------------------------------------
