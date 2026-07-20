@@ -58,6 +58,7 @@ the Keychain entry.
 | `messages [--folder received] [--year 2025-2026] [--json]` | Messagerie — full list of a folder |
 | `read <ID> [--folder received] [--year …] [--json]` | One message, body decoded to text + attachments |
 | `download <ID> [--file FID] [--folder …] [--year …] [-o DIR]` | Save a message's attachment(s) to disk |
+| `mark <ID>... [--read/--unread] [--year …]` | Mark message(s) read or unread |
 
 Every read command supports `--json` for piping into `jq`/scripts, and the
 grade/homework/timetable commands take `--student <id-or-name>` to pick a child
@@ -114,6 +115,14 @@ The tests cover the network-free logic (body encoding, student resolution,
 module gating, password-storage precedence). The auth flow and endpoints are
 verified live via `login`.
 
+## Reading marks messages as read
+
+Opening a message (`read`) or fetching its attachments (`download`) marks it
+**read** on the server — the API's single-message fetch does this, exactly like
+opening it on the website. To undo, use `mark --unread <ID>`.
+
 ## Scope
 
-v1 is **read-only**: it never sends messages, pays invoices, or submits forms.
+Almost entirely **read-only** — it never sends messages, pays invoices, or
+submits forms. The one write is `mark`, which only toggles read/unread status
+(nothing destructive).

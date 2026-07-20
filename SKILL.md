@@ -108,6 +108,7 @@ uv run …/ecoledirecte_cli.py timetable [--student NAME] [--from YYYY-MM-DD] [-
 uv run …/ecoledirecte_cli.py messages [--folder received|sent|archived|draft] [--year 2025-2026] [--json]
 uv run …/ecoledirecte_cli.py read <MESSAGE_ID> [--folder received] [--year 2025-2026] [--json]
 uv run …/ecoledirecte_cli.py download <MESSAGE_ID> [--file FID] [--out DIR] [--folder received] [--year 2025-2026]
+uv run …/ecoledirecte_cli.py mark <MESSAGE_ID>... [--read | --unread] [--year 2025-2026]
 ```
 
 - `notes` — grades with per-devoir value, scale, coefficient and subject.
@@ -127,6 +128,10 @@ uv run …/ecoledirecte_cli.py download <MESSAGE_ID> [--file FID] [--out DIR] [-
   the bytes; to *read* a PDF/image, open the saved file with your own tools (an
   agent can read the downloaded file directly). Pass the same `--folder`/`--year`
   used to find the message.
+- `mark <ID>...` — the only **write** command: marks message(s) `--read`
+  (default) or `--unread`. Note that `read` and `download` already mark a message
+  read as a side effect (the API does this on fetch, like the website); use
+  `mark --unread` to undo. Pass `--year` if the message is from a past year.
 
 For a parent account, grades/homework/timetable use the **student** id; messages
 use the **family** id — the CLI picks the right one automatically.

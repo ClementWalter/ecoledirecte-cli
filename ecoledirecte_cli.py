@@ -980,5 +980,30 @@ def download(message_id: str, file_id: str | None, folder: str, year: str | None
     save_config({**cfg, "token": client.token})
 
 
+@cli.command()
+@click.argument("message_ids", nargs=-1, required=True)
+@click.option("--read/--unread", "as_read", default=True,
+              help="Mark as read (default) or --unread.")
+@click.option("--year", help="School year the message(s) belong to, e.g. 2025-2026.")
+def mark(message_ids: tuple[str, ...], as_read: bool, year: str | None) -> None:
+    """Mark one or more messages as read or unread (the only write command).
+
+    `read` and `download` already mark a message read as a side effect; use
+    `mark --unread <ID>` to undo that.
+    """
+    cfg = require_login()
+    acc = primary_account(cfg)
+    client = EDClient(cfg)
+    action = "marquerCommeLu" if as_read else "marquerCommeNonLu"
+    client.post(
+        f"{mailbox_path(acc)}/messages.awp",
+        {"action": action, "ids": [int(i) for i in message_ids], "anneeMessages": year or ""},
+        verbe="put",
+    )
+    save_config({**cfg, "token": client.token})
+    state = "read" if as_read else "unread"
+    console.print(f"[green]✓[/green] Marked {len(message_ids)} message(s) as {state}.")
+
+
 if __name__ == "__main__":
     cli()
