@@ -29,10 +29,10 @@ so future logins skip it.
 ## Running
 
 ```bash
-uv run /Users/clementwalter/Documents/ecoledirecte-cli/ecoledirecte_cli.py <command> [options]
+uv run ~/.claude/skills/ecoledirecte-cli/ecoledirecte_cli.py <command> [options]
 ```
 
-(Optionally alias it: `alias ecoledirecte='uv run …/ecoledirecte_cli.py'`.)
+(Optionally alias it: `alias ecoledirecte='uv run ~/.claude/skills/ecoledirecte-cli/ecoledirecte_cli.py'`.)
 
 ## When to use
 
