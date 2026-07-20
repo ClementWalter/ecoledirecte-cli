@@ -107,6 +107,7 @@ uv run …/ecoledirecte_cli.py homework [--student NAME] [--date YYYY-MM-DD] [--
 uv run …/ecoledirecte_cli.py timetable [--student NAME] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
 uv run …/ecoledirecte_cli.py messages [--folder received|sent|archived|draft] [--year 2025-2026] [--json]
 uv run …/ecoledirecte_cli.py read <MESSAGE_ID> [--folder received] [--year 2025-2026] [--json]
+uv run …/ecoledirecte_cli.py download <MESSAGE_ID> [--file FID] [--out DIR] [--folder received] [--year 2025-2026]
 ```
 
 - `notes` — grades with per-devoir value, scale, coefficient and subject.
@@ -121,6 +122,11 @@ uv run …/ecoledirecte_cli.py read <MESSAGE_ID> [--folder received] [--year 202
 - `read <ID>` — opens one message: subject, sender, date, the body (base64 HTML
   decoded to plain text), and any attachments. Use `--folder sent` for a message
   from the sent folder, and the same `--year` you listed it under.
+- `download <ID>` — saves the message's attachment(s) to disk (`--out DIR`,
+  `--file FID` for just one) using the server's filename. The CLI only fetches
+  the bytes; to *read* a PDF/image, open the saved file with your own tools (an
+  agent can read the downloaded file directly). Pass the same `--folder`/`--year`
+  used to find the message.
 
 For a parent account, grades/homework/timetable use the **student** id; messages
 use the **family** id — the CLI picks the right one automatically.

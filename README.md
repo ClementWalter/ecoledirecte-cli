@@ -57,6 +57,7 @@ the Keychain entry.
 | `timetable [--student N] [--from …] [--to …] [--json]` | Emploi du temps |
 | `messages [--folder received] [--year 2025-2026] [--json]` | Messagerie — full list of a folder |
 | `read <ID> [--folder received] [--year …] [--json]` | One message, body decoded to text + attachments |
+| `download <ID> [--file FID] [--folder …] [--year …] [-o DIR]` | Save a message's attachment(s) to disk |
 
 Every read command supports `--json` for piping into `jq`/scripts, and the
 grade/homework/timetable commands take `--student <id-or-name>` to pick a child
@@ -70,6 +71,7 @@ uv run ecoledirecte_cli.py timetable --from 2026-09-14 --to 2026-09-20
 uv run ecoledirecte_cli.py messages --year 2025-2026          # previous school year
 uv run ecoledirecte_cli.py messages --folder sent             # sent folder
 uv run ecoledirecte_cli.py read 57 --year 2025-2026           # read message id 57
+uv run ecoledirecte_cli.py download 57 --year 2025-2026 -o ./dl  # save its attachments
 ```
 
 `messages` lists the **whole** folder (not just the first page) and prints each

@@ -281,6 +281,36 @@ class EDClient:
         self.cfg = {**self.cfg, **{k: v for k, v in fresh.items() if k != "password"}}
         save_config({k: v for k, v in self.cfg.items() if k != "password"})
 
+    def download(self, file_id: str | int, file_type: str, payload: dict | None = None) -> bytes:
+        """Download a file (message attachment, etc.) and return its raw bytes.
+
+        The download endpoint streams the binary directly — no JSON envelope — so
+        the rotating token is refreshed from the ``X-Token`` response header
+        instead of a body field.
+        """
+        url = (
+            f"{BASE}/telechargement.awp?verbe=get&fichierId={file_id}"
+            f"&leTypeDeFichier={file_type}&v={API_VERSION}"
+        )
+        logger.debug("DOWNLOAD %s", url)
+        r = self.session.post(
+            url, data=encode_body(payload), headers=self._headers(), timeout=120
+        )
+        new_token = {k.lower(): v for k, v in r.headers.items()}.get("x-token")
+        if new_token:
+            self.token = new_token
+        ctype = r.headers.get("content-type", "")
+        # An error comes back as JSON instead of the binary stream.
+        if "application/json" in ctype:
+            try:
+                body = r.json()
+                raise EDError(body.get("message") or "Download failed.", code=body.get("code"))
+            except ValueError:
+                pass
+        if r.status_code != 200 or not r.content:
+            raise EDError(f"Download failed (HTTP {r.status_code}).")
+        return r.content
+
     def _post_once(
         self, path: str, payload: dict | None, verbe: str, extra: dict | None = None
     ) -> dict:
@@ -532,6 +562,16 @@ def decode_b64_text(s: str) -> str:
         return base64.b64decode(s).decode("utf-8", "replace")
     except Exception:
         return s
+
+
+def safe_filename(name: str, fallback: str) -> str:
+    """Return a filesystem-safe basename, never empty and never a path.
+
+    Guards against a server-supplied name escaping the output directory (path
+    separators, ``..``) by reducing to the basename and stripping leading dots.
+    """
+    name = os.path.basename((name or "").replace("\\", "/").strip()).lstrip(".")
+    return name or fallback
 
 
 def output(data, as_json: bool, render) -> None:
@@ -895,6 +935,41 @@ def read(message_id: str, folder: str, year: str | None, as_json: bool) -> None:
                 console.print(f"  • {f.get('libelle', '')} (id {f.get('id', '')})")
 
     output(data, as_json, render)
+
+
+@cli.command()
+@click.argument("message_id")
+@click.option("--file", "file_id", help="Only this attachment id (default: all attachments).")
+@click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
+              help="Folder the message is in. Default: received.")
+@click.option("--year", help="School year the message belongs to, e.g. 2025-2026.")
+@click.option("--out", "-o", default=".", type=click.Path(file_okay=False, path_type=Path),
+              help="Directory to save into. Default: current directory.")
+def download(message_id: str, file_id: str | None, folder: str, year: str | None, out: Path) -> None:
+    """Download a message's attachment(s) to disk (see IDs from `messages`/`read`)."""
+    cfg = require_login()
+    acc = primary_account(cfg)
+    client = EDClient(cfg)
+    payload = {"anneeMessages": year} if year else {}
+    msg = client.post(
+        f"{mailbox_path(acc)}/messages/{message_id}.awp",
+        payload,
+        extra={"mode": FOLDERS[folder]["mode"]},
+    )
+    files = msg.get("files") or []
+    if file_id:
+        files = [f for f in files if str(f.get("id")) == str(file_id)]
+    if not files:
+        raise EDError("No matching attachment on that message.")
+
+    out.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        content = client.download(f["id"], f.get("type") or "PIECE_JOINTE", payload)
+        name = safe_filename(f.get("libelle", ""), f"attachment_{f['id']}")
+        path = out / name
+        path.write_bytes(content)
+        console.print(f"[green]✓[/green] {path} [dim]({len(content):,} bytes)[/dim]")
+    save_config({**cfg, "token": client.token})
 
 
 if __name__ == "__main__":

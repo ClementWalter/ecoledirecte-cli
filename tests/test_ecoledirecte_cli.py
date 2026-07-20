@@ -26,6 +26,7 @@ from ecoledirecte_cli import (  # noqa: E402
     primary_account,
     require_module,
     resolve_student,
+    safe_filename,
     student_name,
 )
 
@@ -224,6 +225,21 @@ def test_html_to_text_unescapes_entities():
 
 def test_html_to_text_converts_br_to_newline():
     assert html_to_text("a<br>b<br/>c") == "a\nb\nc"
+
+
+# ---- safe_filename --------------------------------------------------------
+
+
+def test_safe_filename_keeps_normal_name():
+    assert safe_filename("Coupon 2025.pdf", "fallback") == "Coupon 2025.pdf"
+
+
+def test_safe_filename_strips_path_traversal():
+    assert safe_filename("../../etc/passwd", "fallback") == "passwd"
+
+
+def test_safe_filename_uses_fallback_when_empty():
+    assert safe_filename("", "attachment_9") == "attachment_9"
 
 
 # ---- mailbox_path ---------------------------------------------------------
