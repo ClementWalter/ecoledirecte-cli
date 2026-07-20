@@ -105,17 +105,22 @@ than one child, `--student <id-or-name>` to pick one.
 uv run …/ecoledirecte_cli.py notes [--student NAME] [--year 2025-2026] [--json]
 uv run …/ecoledirecte_cli.py homework [--student NAME] [--date YYYY-MM-DD] [--json]
 uv run …/ecoledirecte_cli.py timetable [--student NAME] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
-uv run …/ecoledirecte_cli.py messages [--student NAME] [--year 2026-2027] [--json]
+uv run …/ecoledirecte_cli.py messages [--folder received|sent|archived|draft] [--year 2025-2026] [--json]
+uv run …/ecoledirecte_cli.py read <MESSAGE_ID> [--folder received] [--year 2025-2026] [--json]
 ```
 
 - `notes` — grades with per-devoir value, scale, coefficient and subject.
 - `homework` — the cahier de textes: without `--date`, upcoming days and which
   have work to do; with `--date`, the detail for that day.
 - `timetable` — lessons in a date range (defaults today → +7 days).
-- `messages` — inbox of the family (parent account) or the student. Defaults to
-  the **current** school year, which is often empty early on. Pass
-  `--year 2025-2026` (EcoleDirecte's own string form) to read a **previous**
-  year — the equivalent of the "Année précédente" dropdown on the website.
+- `messages` — lists a mailbox folder in full (not just the first page of 20),
+  printing each message's **ID**. `--folder` selects `received` (default),
+  `sent`, `archived` or `draft`. Defaults to the **current** school year, which
+  is often empty early on; pass `--year 2025-2026` (EcoleDirecte's own string
+  form) to read a **previous** year — the "Année précédente" dropdown.
+- `read <ID>` — opens one message: subject, sender, date, the body (base64 HTML
+  decoded to plain text), and any attachments. Use `--folder sent` for a message
+  from the sent folder, and the same `--year` you listed it under.
 
 For a parent account, grades/homework/timetable use the **student** id; messages
 use the **family** id — the CLI picks the right one automatically.

@@ -55,18 +55,26 @@ the Keychain entry.
 | `notes [--student N] [--year 2025-2026] [--json]` | Grades (notes) |
 | `homework [--student N] [--date YYYY-MM-DD] [--json]` | Cahier de textes |
 | `timetable [--student N] [--from …] [--to …] [--json]` | Emploi du temps |
-| `messages [--student N] [--year 2025-2026] [--json]` | Messagerie inbox |
+| `messages [--folder received] [--year 2025-2026] [--json]` | Messagerie — full list of a folder |
+| `read <ID> [--folder received] [--year …] [--json]` | One message, body decoded to text + attachments |
 
-Every read command supports `--json` for piping into `jq`/scripts, and
-`--student <id-or-name>` to pick a child on a multi-child parent account.
+Every read command supports `--json` for piping into `jq`/scripts, and the
+grade/homework/timetable commands take `--student <id-or-name>` to pick a child
+on a multi-child parent account.
 
 ```bash
 uv run ecoledirecte_cli.py whoami
 uv run ecoledirecte_cli.py notes --student Thalie
 uv run ecoledirecte_cli.py homework --date 2026-09-15
 uv run ecoledirecte_cli.py timetable --from 2026-09-14 --to 2026-09-20
-uv run ecoledirecte_cli.py messages --year 2025-2026   # previous school year
+uv run ecoledirecte_cli.py messages --year 2025-2026          # previous school year
+uv run ecoledirecte_cli.py messages --folder sent             # sent folder
+uv run ecoledirecte_cli.py read 57 --year 2025-2026           # read message id 57
 ```
+
+`messages` lists the **whole** folder (not just the first page) and prints each
+message's ID; pass that ID to `read`. Folders: `received` (default), `sent`,
+`archived`, `draft`.
 
 ## Feature availability is per account
 

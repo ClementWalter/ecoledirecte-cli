@@ -16,9 +16,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import ecoledirecte_cli  # noqa: E402
 from ecoledirecte_cli import (  # noqa: E402
     EDError,
+    decode_b64_text,
     encode_body,
     get_password,
+    html_to_text,
     list_students,
+    mailbox_path,
     module_enabled,
     primary_account,
     require_module,
@@ -196,6 +199,42 @@ def test_get_password_falls_back_to_config(monkeypatch):
 def test_get_password_none_when_nothing_stored(monkeypatch):
     monkeypatch.setattr(ecoledirecte_cli, "fetch_password", lambda ident: None)
     assert get_password({"identifiant": "u"}) is None
+
+
+# ---- message body decoding ------------------------------------------------
+
+
+def test_decode_b64_text_decodes_base64():
+    encoded = base64.b64encode("Bonjour".encode()).decode()
+    assert decode_b64_text(encoded) == "Bonjour"
+
+
+def test_decode_b64_text_passes_through_plain():
+    # Non-base64 (has a space) is returned unchanged rather than crashing.
+    assert decode_b64_text("hello world !!") == "hello world !!"
+
+
+def test_html_to_text_breaks_on_block_tags():
+    assert html_to_text("<p>Line 1</p><p>Line 2</p>") == "Line 1\nLine 2"
+
+
+def test_html_to_text_unescapes_entities():
+    assert html_to_text("caf&eacute; &amp; th&eacute;") == "café & thé"
+
+
+def test_html_to_text_converts_br_to_newline():
+    assert html_to_text("a<br>b<br/>c") == "a\nb\nc"
+
+
+# ---- mailbox_path ---------------------------------------------------------
+
+
+def test_mailbox_path_parent_uses_familles():
+    assert mailbox_path({"typeCompte": "1", "id": 15306}) == "familles/15306"
+
+
+def test_mailbox_path_student_uses_eleves():
+    assert mailbox_path({"typeCompte": "E", "id": 20001}) == "eleves/20001"
 
 
 # ---- 2FA base64 round-trip (the shape doubleauth relies on) ---------------

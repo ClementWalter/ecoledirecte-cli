@@ -39,9 +39,11 @@ from __future__ import annotations
 
 import base64
 import datetime as _dt
+import html as _html
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -241,19 +243,26 @@ class EDClient:
             h["2FA-Token"] = self.twofa_token
         return h
 
-    def post(self, path: str, payload: dict | None = None, verbe: str = "get") -> dict:
+    def post(
+        self,
+        path: str,
+        payload: dict | None = None,
+        verbe: str = "get",
+        extra: dict | None = None,
+    ) -> dict:
         """POST to an ``.awp`` endpoint and return its ``data`` object.
 
-        Rotates ``self.token`` from the response, and on an expired-token error
-        re-logs-in once using the stored credentials before retrying.
+        ``extra`` adds query parameters beyond ``verbe``/``v`` (e.g. ``mode`` when
+        reading a single message). Rotates ``self.token`` from the response, and
+        on an expired-token error re-logs-in once before retrying.
         """
         try:
-            return self._post_once(path, payload, verbe)
+            return self._post_once(path, payload, verbe, extra)
         except EDError as exc:
             if exc.code == CODE_EXPIRED_TOKEN and get_password(self.cfg):
                 logger.debug("token expired, re-authenticating")
                 self._reauth()
-                return self._post_once(path, payload, verbe)
+                return self._post_once(path, payload, verbe, extra)
             raise
 
     def _reauth(self) -> None:
@@ -272,8 +281,12 @@ class EDClient:
         self.cfg = {**self.cfg, **{k: v for k, v in fresh.items() if k != "password"}}
         save_config({k: v for k, v in self.cfg.items() if k != "password"})
 
-    def _post_once(self, path: str, payload: dict | None, verbe: str) -> dict:
+    def _post_once(
+        self, path: str, payload: dict | None, verbe: str, extra: dict | None = None
+    ) -> dict:
         url = f"{BASE}/{path}?verbe={verbe}&v={API_VERSION}"
+        if extra:
+            url += "".join(f"&{k}={v}" for k, v in extra.items())
         logger.debug("POST %s payload=%s", url, payload)
         r = self.session.post(
             url, data=encode_body(payload), headers=self._headers(), timeout=30
@@ -496,6 +509,29 @@ def require_module(entity: dict, code: str, label: str) -> None:
             f"The '{label}' module ({code}) is disabled for {name}. "
             "The school does not publish this feature through EcoleDirecte."
         )
+
+
+def html_to_text(s: str) -> str:
+    """Flatten EcoleDirecte's rich-text HTML message bodies to readable text.
+
+    Message content comes back as base64-encoded HTML; block tags become line
+    breaks and entities are unescaped, so the terminal shows plain prose.
+    """
+    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
+    s = re.sub(r"(?i)</(p|div|tr|li|h[1-6]|table)>", "\n", s)
+    s = re.sub(r"<[^>]+>", "", s)
+    s = _html.unescape(s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def decode_b64_text(s: str) -> str:
+    """Decode a base64 string to UTF-8, tolerating already-plain values."""
+    try:
+        return base64.b64decode(s).decode("utf-8", "replace")
+    except Exception:
+        return s
 
 
 def output(data, as_json: bool, render) -> None:
@@ -757,39 +793,106 @@ def timetable(
     output(data, as_json, render)
 
 
+def mailbox_path(acc: dict) -> str:
+    """Return the messages endpoint base for the account.
+
+    A parent reads the family mailbox; a student reads their own.
+    """
+    if acc.get("typeCompte") == "E":
+        return f"eleves/{acc['id']}"
+    return f"familles/{acc['id']}"
+
+
+# EcoleDirecte's folder names, mapped to the response key each populates and the
+# `mode` a single-message read needs.
+FOLDERS = {
+    "received": {"key": "received", "mode": "destinataire"},
+    "sent": {"key": "sent", "mode": "expediteur"},
+    "archived": {"key": "archived", "mode": "destinataire"},
+    "draft": {"key": "draft", "mode": "expediteur"},
+}
+
+
 @cli.command()
-@click.option("--student", "-s", help="Mailbox of a specific student (parent accounts).")
-@click.option("--year", help="Messages year, e.g. 2026-2027. Default: current.")
+@click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
+              help="Mailbox folder. Default: received.")
+@click.option("--year", help="School year, e.g. 2025-2026. Default: current.")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
-def messages(student: str | None, year: str | None, as_json: bool) -> None:
-    """List received messages (messagerie)."""
+def messages(folder: str, year: str | None, as_json: bool) -> None:
+    """List messages in a mailbox folder (all of them, not just the first page)."""
     cfg = require_login()
     acc = primary_account(cfg)
-    # Parent accounts read the family mailbox; student accounts read their own.
-    if acc.get("typeCompte") == "E":
-        path = f"eleves/{acc['id']}/messages.awp"
-    else:
-        path = f"familles/{acc['id']}/messages.awp"
     client = EDClient(cfg)
     payload = {"anneeMessages": year} if year else {}
-    data = client.post(path, payload)
+    # The default call caps at 20 per folder; a large itemsPerPage on a single
+    # folder pulls the whole list in one request (counts are in the low hundreds).
+    data = client.post(
+        f"{mailbox_path(acc)}/messages.awp",
+        payload,
+        extra={
+            "typeRecuperation": folder,
+            "getAll": "1",
+            "idClasseur": "0",
+            "orderBy": "date",
+            "order": "desc",
+            "page": "0",
+            "itemsPerPage": "5000",
+        },
+    )
     save_config({**cfg, "token": client.token})
 
     def render(d):
-        received = (d.get("messages") or {}).get("received", [])
-        if not received:
-            console.print("[yellow]Inbox is empty.[/yellow]")
+        items = (d.get("messages") or {}).get(FOLDERS[folder]["key"], [])
+        if not items:
+            console.print(f"[yellow]No messages in '{folder}'.[/yellow]")
             return
-        table = Table("Date", "From", "Subject", "Read")
-        for m in received:
+        table = Table("ID", "Date", "From", "Subject", "Read")
+        for m in items:
             frm = m.get("from") or {}
             table.add_row(
+                str(m.get("id", "")),
                 m.get("date", ""),
                 f"{frm.get('prenom', '')} {frm.get('nom', '')}".strip(),
                 m.get("subject", ""),
                 "" if m.get("read") else "●",
             )
         console.print(table)
+        console.print(f"[dim]{len(items)} message(s). Read one with: read <ID>[/dim]")
+
+    output(data, as_json, render)
+
+
+@cli.command()
+@click.argument("message_id")
+@click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
+              help="Folder the message is in (sets read mode). Default: received.")
+@click.option("--year", help="School year the message belongs to, e.g. 2025-2026.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (content still base64).")
+def read(message_id: str, folder: str, year: str | None, as_json: bool) -> None:
+    """Read one message by ID (see the IDs from `messages`)."""
+    cfg = require_login()
+    acc = primary_account(cfg)
+    client = EDClient(cfg)
+    payload = {"anneeMessages": year} if year else {}
+    data = client.post(
+        f"{mailbox_path(acc)}/messages/{message_id}.awp",
+        payload,
+        extra={"mode": FOLDERS[folder]["mode"]},
+    )
+    save_config({**cfg, "token": client.token})
+
+    def render(d):
+        frm = d.get("from") or {}
+        console.print(f"[bold]{d.get('subject', '(no subject)')}[/bold]")
+        console.print(
+            f"[dim]From {frm.get('prenom', '')} {frm.get('nom', '')} · {d.get('date', '')}[/dim]\n"
+        )
+        console.print(html_to_text(decode_b64_text(d.get("content", ""))))
+        files = d.get("files") or []
+        if files:
+            console.print("\n[bold]Attachments:[/bold]")
+            for f in files:
+                console.print(f"  • {f.get('libelle', '')} (id {f.get('id', '')})")
 
     output(data, as_json, render)
 
