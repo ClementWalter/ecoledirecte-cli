@@ -26,13 +26,23 @@ new device triggers a **two-factor security question** ("question secrète")
 that the user answers once; the resulting trusted-device tokens are then stored
 so future logins skip it.
 
-## Running
+## How to invoke
+
+Invoke it as **`ecoledirecte`** — on `$PATH` via a symlink in `~/.local/bin` onto this
+repo's `bin/ecoledirecte`, so it always runs the current checkout: a `git pull`, or even
+an uncommitted edit, takes effect immediately with nothing to reinstall.
 
 ```bash
-uv run ~/.claude/skills/ecoledirecte-cli/ecoledirecte_cli.py <command> [options]
+ecoledirecte notes
 ```
 
-(Optionally alias it: `alias ecoledirecte='uv run ~/.claude/skills/ecoledirecte-cli/ecoledirecte_cli.py'`.)
+Examples in this doc are written that way. If `ecoledirecte` is not on `$PATH`, run the
+bundled launcher `bin/ecoledirecte` resolved against this skill's own directory (PEP 723
+— `uv` resolves deps inline on first run), or link it once:
+
+```bash
+ln -sfn <skill-dir>/bin/ecoledirecte ~/.local/bin/ecoledirecte
+```
 
 ## When to use
 
@@ -57,7 +67,7 @@ First login is **interactive** (the 2FA question can't be answered
 non-interactively), so run it in a real terminal:
 
 ```bash
-uv run …/ecoledirecte_cli.py login
+ecoledirecte login
 ```
 
 It prompts for the identifiant (username) and password — the password is typed
@@ -88,7 +98,7 @@ then re-prompted whenever the token expires). `logout` deletes the local file.
 ### 1. Check login + see what's available
 
 ```bash
-uv run …/ecoledirecte_cli.py whoami --json
+ecoledirecte whoami --json
 ```
 
 Shows the account (parent vs élève), the reachable students with their ids, and
@@ -102,13 +112,13 @@ All read commands accept `--json` (raw API `data`) and, where a parent has more
 than one child, `--student <id-or-name>` to pick one.
 
 ```bash
-uv run …/ecoledirecte_cli.py notes [--student NAME] [--year 2025-2026] [--json]
-uv run …/ecoledirecte_cli.py homework [--student NAME] [--date YYYY-MM-DD] [--json]
-uv run …/ecoledirecte_cli.py timetable [--student NAME] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
-uv run …/ecoledirecte_cli.py messages [--folder received|sent|archived|draft] [--year 2025-2026] [--json]
-uv run …/ecoledirecte_cli.py read <MESSAGE_ID> [--folder received] [--year 2025-2026] [--json]
-uv run …/ecoledirecte_cli.py download <MESSAGE_ID> [--file FID] [--out DIR] [--folder received] [--year 2025-2026]
-uv run …/ecoledirecte_cli.py mark <MESSAGE_ID>... [--read | --unread] [--year 2025-2026]
+ecoledirecte notes [--student NAME] [--year 2025-2026] [--json]
+ecoledirecte homework [--student NAME] [--date YYYY-MM-DD] [--json]
+ecoledirecte timetable [--student NAME] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
+ecoledirecte messages [--folder received|sent|archived|draft] [--year 2025-2026] [--json]
+ecoledirecte read <MESSAGE_ID> [--folder received] [--year 2025-2026] [--json]
+ecoledirecte download <MESSAGE_ID> [--file FID] [--out DIR] [--folder received] [--year 2025-2026]
+ecoledirecte mark <MESSAGE_ID>... [--read | --unread] [--year 2025-2026]
 ```
 
 - `notes` — grades with per-devoir value, scale, coefficient and subject.

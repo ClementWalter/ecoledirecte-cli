@@ -14,19 +14,20 @@ Nothing to install — [`uv`](https://docs.astral.sh/uv/) runs the script and it
 dependencies inline (PEP 723):
 
 ```bash
-uv run ecoledirecte_cli.py --help
+ecoledirecte --help
 ```
 
-Optional alias:
+To use it from any directory, put the launcher on `$PATH` — the symlink points at
+the checkout, so a `git pull` is all an upgrade takes:
 
 ```bash
-alias ecoledirecte='uv run /path/to/ecoledirecte_cli.py'
+ln -sfn /path/to/ecoledirecte-cli/bin/ecoledirecte ~/.local/bin/ecoledirecte
 ```
 
 ## Authentication
 
 ```bash
-uv run ecoledirecte_cli.py login
+ecoledirecte login
 ```
 
 Prompts for your identifiant and password. **On a new device EcoleDirecte asks a
@@ -65,14 +66,14 @@ grade/homework/timetable commands take `--student <id-or-name>` to pick a child
 on a multi-child parent account.
 
 ```bash
-uv run ecoledirecte_cli.py whoami
-uv run ecoledirecte_cli.py notes --student Thalie
-uv run ecoledirecte_cli.py homework --date 2026-09-15
-uv run ecoledirecte_cli.py timetable --from 2026-09-14 --to 2026-09-20
-uv run ecoledirecte_cli.py messages --year 2025-2026          # previous school year
-uv run ecoledirecte_cli.py messages --folder sent             # sent folder
-uv run ecoledirecte_cli.py read 57 --year 2025-2026           # read message id 57
-uv run ecoledirecte_cli.py download 57 --year 2025-2026 -o ./dl  # save its attachments
+ecoledirecte whoami
+ecoledirecte notes --student Thalie
+ecoledirecte homework --date 2026-09-15
+ecoledirecte timetable --from 2026-09-14 --to 2026-09-20
+ecoledirecte messages --year 2025-2026          # previous school year
+ecoledirecte messages --folder sent             # sent folder
+ecoledirecte read 57 --year 2025-2026           # read message id 57
+ecoledirecte download 57 --year 2025-2026 -o ./dl  # save its attachments
 ```
 
 `messages` lists the **whole** folder (not just the first page) and prints each
@@ -85,7 +86,7 @@ Each school enables EcoleDirecte modules independently. If a module is off for a
 account, the CLI says so plainly instead of returning a blank result:
 
 ```
-$ uv run ecoledirecte_cli.py notes
+$ ecoledirecte notes
 Error: The 'Notes' module (NOTES) is disabled for Thalie. The school does not
 publish this feature through EcoleDirecte.
 ```
