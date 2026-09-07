@@ -203,9 +203,9 @@ def test_student_name_falls_back_to_id():
 # ---- password storage precedence ------------------------------------------
 
 
-def test_get_password_prefers_keychain(monkeypatch):
+def test_get_password_prefers_synchronized_config(monkeypatch):
     monkeypatch.setattr(ecoledirecte_cli, "fetch_password", lambda ident: "from-keychain")
-    assert get_password({"identifiant": "u", "password": "from-config"}) == "from-keychain"
+    assert get_password({"identifiant": "u", "password": "from-config"}) == "from-config"
 
 
 def test_get_password_falls_back_to_config(monkeypatch):

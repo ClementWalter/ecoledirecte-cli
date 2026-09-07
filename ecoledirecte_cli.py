@@ -26,9 +26,8 @@ Auth model (verified live against a parent account, 2026-07):
      changes with each response; you echo back the ``token`` field of the previous
      response) and a constant ``2FA-Token`` — plus a ``data=<json>`` body.
 
-Credentials live in ``~/.config/ecoledirecte-cli/config.json`` (mode 600): the
-identifiant, the password (needed to re-login when the rotating token expires),
-and the trusted-device tokens so re-login never re-triggers the 2FA question.
+The 1Password broker manages credentials and rotating tokens. A mode-600
+working copy preserves login and token refresh while the broker is unavailable.
 
 Feature availability is not universal: each school enables modules per account.
 The login response lists them, so the CLI can say "the NOTES module is disabled
@@ -110,7 +109,39 @@ MODULE_MESSAGING = "MESSAGERIE"
 # --- Config ------------------------------------------------------------------
 
 
+
+def _auth_broker(action, payload=None):
+    """Keep credential bodies on pipes and suppress provider errors containing secrets."""
+    import subprocess
+    import json
+    try:
+        result = subprocess.run(
+            ["claudine-secret", "auth", action, "ecoledirecte"],
+            input=json.dumps(payload) if payload is not None else None,
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode not in (0, 3):
+            return None
+        value = json.loads(result.stdout)
+        if not isinstance(value, dict):
+            return None
+        if action == "load" and result.returncode:
+            return None
+        return value
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
 def load_config() -> dict:
+    """Prefer broker pending or vault credentials over a legacy working copy."""
+    if CONFIG_FILE.with_suffix(".signed-out").exists():
+        return {}
+    if CONFIG_FILE.with_suffix(".auth-pending").exists():
+        return _legacy_config()
+    return _auth_broker("load") or _legacy_config()
+
+
+def _legacy_config() -> dict:
     """Return the stored config, or an empty dict when nothing is saved yet."""
     if not CONFIG_FILE.exists():
         return {}
@@ -121,14 +152,17 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
-    """Persist config at mode 600.
-
-    On macOS the password is kept out of this file (it lives in the Keychain);
-    everywhere else it stays here as a mode-600 fallback.
-    """
+    """Keep a protected working copy and synchronize rotating credentials through the broker."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.touch(mode=0o600, exist_ok=True)
+    CONFIG_FILE.chmod(0o600)
     CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=False))
     CONFIG_FILE.chmod(0o600)
+    pending = CONFIG_FILE.with_suffix(".auth-pending")
+    if _auth_broker("save", config) is None:
+        pending.touch(mode=0o600)
+    else:
+        pending.unlink(missing_ok=True)
 
 
 # --- Password storage (macOS Keychain, with a mode-600 file fallback) --------
@@ -193,8 +227,8 @@ def delete_password(identifiant: str) -> None:
 
 
 def get_password(cfg: dict) -> str | None:
-    """Return the usable password: Keychain first, then the config fallback."""
-    return fetch_password(cfg.get("identifiant", "")) or cfg.get("password")
+    """Prefer the synchronized password and retain Keychain migration compatibility."""
+    return cfg.get("password") or fetch_password(cfg.get("identifiant", ""))
 
 
 # --- HTTP / API client -------------------------------------------------------
@@ -925,18 +959,15 @@ def login(identifiant: str | None, no_store_password: bool) -> None:
 
     result = authenticate(identifiant, password, cfg.get("fa"))
 
-    # Decide where the password lives. Default: macOS Keychain. The config file
-    # never keeps the password unless we're on a platform without a Keychain and
-    # the user did not opt out.
+    # An explicit opt-out also removes the legacy local password copy.
     result.pop("password", None)
     where = "not stored"
     if no_store_password:
         delete_password(identifiant)
-    elif store_password(identifiant, password):
-        where = "password in macOS Keychain"
-    else:
-        result["password"] = password  # mode-600 fallback (non-macOS)
-        where = "password in config (mode 600)"
+    if not no_store_password:
+        result["password"] = password
+        where = "password queued for 1Password with protected offline persistence"
+    CONFIG_FILE.with_suffix(".signed-out").unlink(missing_ok=True)
     save_config(result)
 
     acc = primary_account(result)
@@ -1009,6 +1040,8 @@ def logout() -> None:
     """Delete the stored session and credentials (does not touch the server)."""
     cfg = load_config()
     delete_password(cfg.get("identifiant", ""))
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.with_suffix(".signed-out").touch(mode=0o600)
     if CONFIG_FILE.exists():
         CONFIG_FILE.unlink()
         console.print("[green]✓[/green] Local session and Keychain entry cleared.")
@@ -1516,6 +1549,47 @@ def send(
     recipients += [resolve_recipient(spec, directory, "cc") for spec in cc]
     message = build_message(acc, subject, text_to_html(text), recipients, [], draft=draft)
     deliver(client, cfg, acc, message, attachments, yes, as_json)
+
+
+
+@cli.command("auth-status")
+@click.option("--json", "as_json", is_flag=True, help="Emit secret-free metadata.")
+def auth_status(as_json):
+    """Report credential storage without contacting the provider. Example: auth-status --json."""
+    import json
+    metadata = _auth_broker("status") or {
+        "connector": "ecoledirecte", "account": "default", "source": "unavailable",
+        "configured": False, "pending": False, "last_sync": None,
+    }
+    if not metadata.get("configured") and CONFIG_FILE.exists():
+        metadata.update(source="legacy", configured=True)
+    metadata.update(session_scope="portable")
+    if CONFIG_FILE.with_suffix(".auth-pending").exists():
+        metadata.update(source="pending-local", configured=True, pending=True)
+    if CONFIG_FILE.with_suffix(".signed-out").exists():
+        metadata.update(configured=False, signed_out=True)
+    click.echo(json.dumps(metadata))
+
+
+@cli.command("auth-sync")
+def auth_sync():
+    """Move stored credentials into 1Password. Example: auth-sync."""
+    import json
+    if CONFIG_FILE.with_suffix(".signed-out").exists():
+        raise click.ClickException("This host is signed out. Connect the account before synchronizing.")
+    local_pending = CONFIG_FILE.with_suffix(".auth-pending")
+    metadata = _auth_broker("save", _legacy_config()) if local_pending.exists() else _auth_broker("sync")
+    if metadata and local_pending.exists():
+        local_pending.unlink()
+    if not metadata or not metadata.get("configured"):
+        config = load_config()
+        if config and not config.get("password"):
+            password = fetch_password(config.get("identifiant", ""))
+            if password:
+                config["password"] = password
+        metadata = _auth_broker("save", config) if config else metadata
+    click.echo(json.dumps(metadata or {"connector": "ecoledirecte", "source": "unavailable", "pending": False}))
+    if not metadata or not metadata.get("configured") or metadata.get("pending"): raise click.exceptions.Exit(3)
 
 
 if __name__ == "__main__":
