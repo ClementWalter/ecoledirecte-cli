@@ -2,10 +2,13 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#     "click>=8.1",
-#     "curl_cffi>=0.7",
-#     "rich>=13.0",
+#     "click==8.4.2",
+#     "curl_cffi==0.15.0",
+#     "rich==15.0.0",
 # ]
+#
+# [tool.uv]
+# exclude-newer = "2026-10-13T00:00:00Z"
 # ///
 """EcoleDirecte CLI — grades, homework, timetable and messages (read, reply, send) from the terminal.
 
@@ -912,7 +915,7 @@ def output(data, as_json: bool, render) -> None:
 # --- CLI ---------------------------------------------------------------------
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(context_settings={"help_option_names": ["-h", "--help"]}, epilog="\b\nExamples:\n  ecoledirecte whoami\n  ecoledirecte notes --json\n  ecoledirecte messages --year 2025-2026")
 @click.version_option(__version__, prog_name="ecoledirecte")
 @click.option("--debug", is_flag=True, help="Verbose logging of HTTP traffic.")
 def cli(debug: bool) -> None:
@@ -929,7 +932,7 @@ def cli(debug: bool) -> None:
     )
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte login\n  ecoledirecte login -u myusername --no-store-password")
 @click.option("--identifiant", "-u", help="EcoleDirecte username (prompted if omitted).")
 @click.option(
     "--no-store-password",
@@ -983,7 +986,7 @@ def login(identifiant: str | None, no_store_password: bool) -> None:
     console.print(f"  Session saved to {CONFIG_FILE} ({where})")
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte whoami\n  ecoledirecte whoami --json")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
 def whoami(as_json: bool) -> None:
     """Show the logged-in account and reachable students."""
@@ -1035,7 +1038,7 @@ def whoami(as_json: bool) -> None:
         console.print(table)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte logout")
 def logout() -> None:
     """Delete the stored session and credentials (does not touch the server)."""
     cfg = load_config()
@@ -1049,7 +1052,7 @@ def logout() -> None:
         console.print("Nothing to clear.")
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte notes\n  ecoledirecte notes --student Alice --year 2025-2026 --json")
 @click.option("--student", "-s", help="Student id or name (parent accounts).")
 @click.option("--year", help="School year, e.g. 2025-2026. Default: current.")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
@@ -1084,7 +1087,7 @@ def notes(student: str | None, year: str | None, as_json: bool) -> None:
     output(data, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte homework\n  ecoledirecte homework --date 2026-10-28 --json")
 @click.option("--student", "-s", help="Student id or name (parent accounts).")
 @click.option("--date", "date_", help="Homework for a specific day (YYYY-MM-DD).")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
@@ -1125,7 +1128,7 @@ def homework(student: str | None, date_: str | None, as_json: bool) -> None:
     output(data, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte timetable\n  ecoledirecte timetable --from 2026-10-26 --to 2026-10-30 --json")
 @click.option("--student", "-s", help="Student id or name (parent accounts).")
 @click.option("--from", "date_from", help="Start date YYYY-MM-DD. Default: today.")
 @click.option("--to", "date_to", help="End date YYYY-MM-DD. Default: +7 days.")
@@ -1186,7 +1189,7 @@ FOLDERS = {
 }
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte messages\n  ecoledirecte messages --folder sent --year 2025-2026 --json")
 @click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
               help="Mailbox folder. Default: received.")
 @click.option("--year", help="School year, e.g. 2025-2026. Default: current.")
@@ -1238,7 +1241,7 @@ def messages(folder: str, year: str | None, as_json: bool) -> None:
     output(data, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte read 12345\n  ecoledirecte read 12345 --folder sent --year 2025-2026 --json")
 @click.argument("message_id")
 @click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
               help="Folder the message is in (sets read mode). Default: received.")
@@ -1273,7 +1276,7 @@ def read(message_id: str, folder: str, year: str | None, as_json: bool) -> None:
     output(data, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte download 12345 --out ~/Downloads\n  ecoledirecte download 12345 --file 678 --out /tmp")
 @click.argument("message_id")
 @click.option("--file", "file_id", help="Only this attachment id (default: all attachments).")
 @click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
@@ -1308,7 +1311,7 @@ def download(message_id: str, file_id: str | None, folder: str, year: str | None
     save_config({**cfg, "token": client.token})
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte mark 12345 12346\n  ecoledirecte mark 12345 --unread")
 @click.argument("message_ids", nargs=-1, required=True)
 @click.option("--read/--unread", "as_read", default=True,
               help="Mark as read (default) or --unread.")
@@ -1418,7 +1421,7 @@ def deliver(
     output(data, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte contacts\n  ecoledirecte contacts --search compta --json")
 @click.option("--search", help="Only contacts whose name or function contains this text.")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
 def contacts(search: str | None, as_json: bool) -> None:
@@ -1457,7 +1460,7 @@ def contacts(search: str | None, as_json: bool) -> None:
     output(directory, as_json, render)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte reply 12345 --body 'Merci, bien reçu.'\n  ecoledirecte reply 12345 --body-file reply.txt --attach justificatif.pdf --yes")
 @click.argument("message_id")
 @click.option("--folder", type=click.Choice(list(FOLDERS)), default="received",
               help="Folder the message is in. Default: received.")
@@ -1518,7 +1521,7 @@ def reply(
     deliver(client, cfg, acc, message, attachments, yes, as_json)
 
 
-@cli.command()
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte send --to A:301 --subject 'Absence' --body 'Bonjour, ...'\n  ecoledirecte send --to secretariat --subject 'Absence' --body-file msg.txt --draft")
 @click.option("--to", "to", multiple=True, required=True,
               help="Recipient: TYPE:ID or a unique name/function substring (repeatable).")
 @click.option("--cc", "cc", multiple=True, help="Carbon-copy recipient, same forms as --to.")
@@ -1552,7 +1555,7 @@ def send(
 
 
 
-@cli.command("auth-status")
+@cli.command("auth-status", epilog="\b\nExamples:\n  ecoledirecte auth-status\n  ecoledirecte auth-status --json")
 @click.option("--json", "as_json", is_flag=True, help="Emit secret-free metadata.")
 def auth_status(as_json):
     """Report credential storage without contacting the provider. Example: auth-status --json."""
@@ -1571,7 +1574,7 @@ def auth_status(as_json):
     click.echo(json.dumps(metadata))
 
 
-@cli.command("auth-sync")
+@cli.command("auth-sync", epilog="\b\nExamples:\n  ecoledirecte auth-sync")
 def auth_sync():
     """Move stored credentials into 1Password. Example: auth-sync."""
     import json
@@ -1591,13 +1594,6 @@ def auth_sync():
     click.echo(json.dumps(metadata or {"connector": "ecoledirecte", "source": "unavailable", "pending": False}))
     if not metadata or not metadata.get("configured") or metadata.get("pending"): raise click.exceptions.Exit(3)
 
-
-# Provider commands share the app and MCP execution policy.
-from pathlib import Path as _PolicyPath
-import sys as _policy_sys
-_policy_sys.path.insert(0, str(_PolicyPath(__file__).resolve().parent))
-from onebrain_policy import install as _install_onebrain_policy
-_install_onebrain_policy(cli, 'ecoledirecte')
 
 if __name__ == "__main__":
     cli()

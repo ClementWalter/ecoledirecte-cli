@@ -34,42 +34,17 @@ so future logins skip it.
 
 ## How to invoke
 
-Invoke it as **`ecoledirecte`** — on `$PATH` via a symlink in `~/.local/bin` onto this
-repo's `bin/ecoledirecte`, so it always runs the current checkout: a `git pull`, or even
-an uncommitted edit, takes effect immediately with nothing to reinstall.
+Invoke it as **`ecoledirecte`**, on `$PATH` through the `~/.local/bin` link that
+`uv run claudine/scripts/link_clis.py` creates onto this repo's
+`bin/ecoledirecte`. The link points at the checkout, so a `git pull` or an
+uncommitted edit takes effect immediately with nothing to reinstall.
 
 ```bash
 ecoledirecte notes
 ```
 
-Examples in this doc are written that way. If `ecoledirecte` is not on `$PATH`, run the
-bundled launcher `bin/ecoledirecte` resolved against this skill's own directory (PEP 723
-— `uv` resolves deps inline on first run), or link it once:
-
-```bash
-ln -sfn <skill-dir>/bin/ecoledirecte ~/.local/bin/ecoledirecte
-```
-
-## When to use
-
-- "Quelles sont les dernières notes de mon fils / ma fille ?"
-- "Y a-t-il des devoirs pour demain ?"
-- "Montre l'emploi du temps de la semaine."
-- "Ai-je des nouveaux messages sur EcoleDirecte ?"
-- "Réponds à la secrétaire avec le justificatif en pièce jointe."
-
-## When NOT to use
-
-- Paying invoices, submitting forms, deleting or archiving messages — the only
-  writes are `mark` (read state) and `reply`/`send` (mailbox), and a message
-  never leaves the account without `--yes` (or lands in Brouillons with
-  `--draft`). Show the user the dry-run preview before passing `--yes`.
-- A feature the school hasn't enabled. Availability is **per account**: each
-  school turns modules on or off. If a module is off the CLI says so clearly
-  (e.g. *"The 'Notes' module (NOTES) is disabled for Alice"*) — that is not a
-  bug, the API genuinely won't serve it for that account. Check `whoami` to see
-  which modules are enabled before promising a feature.
-
+If `ecoledirecte` is not on `$PATH`, run `<skill-dir>/bin/ecoledirecte` (a
+symlink onto the PEP 723 script; `uv` resolves the pinned deps on first run).
 ## Authentication
 
 First login is **interactive** (the 2FA question can't be answered
@@ -101,6 +76,10 @@ auto-re-login when the token expires.
 
 Use `--no-store-password` on `login` to avoid saving the password (the user is
 then re-prompted whenever the token expires). `logout` deletes the local file.
+
+`ecoledirecte auth-status [--json]` reports where the credential lives (1Password
+broker or the mode-600 working copy) and whether a sync is pending, without
+secrets; `ecoledirecte auth-sync` retries a pending sync (exit 3 while pending).
 
 ## Output conventions
 
@@ -201,6 +180,35 @@ the user, send only once they confirm.
 - `--json` prints the API response (`{"id": <new message id>}`); the new message
   appears in `messages --folder sent` (or `draft`).
 
+## Recipes
+
+```bash
+# Latest grades for one child, as data
+ecoledirecte notes --student Alice --json
+
+# Homework due tomorrow
+ecoledirecte homework --date 2026-10-28
+
+# This week's timetable
+ecoledirecte timetable --from 2026-10-26 --to 2026-10-30
+
+# New messages, then read one and save its attachments
+ecoledirecte messages
+ecoledirecte read 12345
+ecoledirecte download 12345 --out ~/Downloads
+
+# Last year's messages (the "Année précédente" dropdown)
+ecoledirecte messages --year 2025-2026
+
+# Answer the school with a document: preview first, send after the user confirms
+ecoledirecte reply 12345 --body-file reply.txt --attach justificatif.pdf
+ecoledirecte reply 12345 --body-file reply.txt --attach justificatif.pdf --yes
+
+# Write to the administration: find the TYPE:ID, then draft
+ecoledirecte contacts --search compta
+ecoledirecte send --to A:301 --subject "Absence" --body-file msg.txt --draft
+```
+
 ## Gotchas
 
 - **Rotating token**: handled internally; each response's token is reused on the
@@ -215,11 +223,31 @@ the user, send only once they confirm.
 - The `--year` values follow EcoleDirecte's own strings: school years like
   `2025-2026` for notes, and `2026-2027`-style for messages.
 
+## When to use
+
+- "Quelles sont les dernières notes de mon fils / ma fille ?"
+- "Y a-t-il des devoirs pour demain ?"
+- "Montre l'emploi du temps de la semaine."
+- "Ai-je des nouveaux messages sur EcoleDirecte ?"
+- "Réponds à la secrétaire avec le justificatif en pièce jointe."
+
+## When NOT to use
+
+- Paying invoices, submitting forms, deleting or archiving messages — the only
+  writes are `mark` (read state) and `reply`/`send` (mailbox), and a message
+  never leaves the account without `--yes` (or lands in Brouillons with
+  `--draft`). Show the user the dry-run preview before passing `--yes`.
+- A feature the school hasn't enabled. Availability is **per account**: each
+  school turns modules on or off. If a module is off the CLI says so clearly
+  (e.g. *"The 'Notes' module (NOTES) is disabled for Alice"*) — that is not a
+  bug, the API genuinely won't serve it for that account. Check `whoami` to see
+  which modules are enabled before promising a feature.
+
 ## Tests
 
 ```bash
-uv run --with pytest --with click --with curl_cffi --with rich \
-  python -m pytest tests/ -q
+uv run --script tests/test_ecoledirecte_cli.py
+uv run --script tests/test_auth_contract.py
 ```
 
 80 tests over the network-free layers — body encoding, student resolution,

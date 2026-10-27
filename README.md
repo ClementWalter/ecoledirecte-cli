@@ -1,5 +1,7 @@
 # ecoledirecte-cli
 
+**Visibility: public.**
+
 A French school's **EcoleDirecte** account from the terminal — grades, homework,
 timetable and the internal mailbox (read, reply and send, with attachments) — in
 one self-contained Python script.
@@ -21,7 +23,7 @@ To use it from any directory, put the launcher on `$PATH` — the symlink points
 the checkout, so a `git pull` is all an upgrade takes:
 
 ```bash
-ln -sfn /path/to/ecoledirecte-cli/bin/ecoledirecte ~/.local/bin/ecoledirecte
+uv run claudine/scripts/link_clis.py   # links every ~/Documents/*-cli/bin/* into ~/.local/bin
 ```
 
 ## Authentication
@@ -124,8 +126,8 @@ Run `whoami` to see which modules (`NOTES`, `CAHIER_DE_TEXTES`, `EDT`,
 ## Tests
 
 ```bash
-uv run --with pytest --with click --with curl_cffi --with rich \
-  python -m pytest tests/ -q
+uv run --script tests/test_ecoledirecte_cli.py
+uv run --script tests/test_auth_contract.py
 ```
 
 80 tests over the network-free layers — body encoding, student resolution,

@@ -1,3 +1,16 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pytest==9.1.1",
+#     "click==8.4.2",
+#     "curl_cffi==0.15.0",
+#     "rich==15.0.0",
+# ]
+#
+# [tool.uv]
+# exclude-newer = "2026-10-13T00:00:00Z"
+# ///
 """Credential broker contract tests use synthetic sessions without provider access."""
 import importlib.machinery
 import importlib.util
@@ -76,3 +89,7 @@ def test_working_copy_is_private(app, monkeypatch):
     monkeypatch.setattr(app, "_auth_broker", lambda *args: None)
     app.save_config({"password": "synthetic"})
     assert app.CONFIG_FILE.stat().st_mode & 0o777 == 0o600
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q"]))

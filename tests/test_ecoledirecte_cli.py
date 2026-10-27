@@ -1,3 +1,16 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pytest==9.1.1",
+#     "click==8.4.2",
+#     "curl_cffi==0.15.0",
+#     "rich==15.0.0",
+# ]
+#
+# [tool.uv]
+# exclude-newer = "2026-10-13T00:00:00Z"
+# ///
 """Unit tests for ecoledirecte_cli's pure, network-free logic.
 
 Covers the parts easy to get subtly wrong: the ``data=<json>`` body encoding,
@@ -579,3 +592,7 @@ def test_send_without_yes_is_a_dry_run(runner, monkeypatch, parent_cfg, staff_co
     monkeypatch.setattr(ecoledirecte_cli.EDClient, "post", lambda self, *a, **k: pytest.fail("posted"))
     result = runner.invoke(cli, ["send", "--to", "A:301", "--subject", "S", "--body", "hi"])
     assert "Dry run" in result.output
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q"]))
