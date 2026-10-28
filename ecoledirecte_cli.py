@@ -57,6 +57,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -330,7 +331,7 @@ class EDClient:
         """
         password = get_password(self.cfg)
         if not password:
-            raise EDError("Session expired and no stored password. Run `login` again.")
+            raise EDError("The EcoleDirecte session expired and no password is stored. " + RELINK_MESSAGE)
         fresh = authenticate(self.cfg["identifiant"], password, self.cfg.get("fa"))
         self.token = fresh["token"]
         self.twofa_token = fresh["twofaToken"]
@@ -433,8 +434,30 @@ def _gtk(session: requests.Session) -> str:
     return gtk
 
 
-def _double_auth(session: requests.Session, x_token: str, twofa_token: str) -> dict:
+RELINK_MESSAGE = (
+    "Not connected to EcoleDirecte. In Claude, call the `link` tool (ask \"connect my EcoleDirecte\"): "
+    "a page opens in your browser to sign in and answer the security question. "
+    "In a terminal: `ecoledirecte login`."
+)
+
+
+def prompt_choice(question: str, propositions: list[str]) -> int:
+    """Ask the security question at the terminal; 0-based index of the answer.
+
+    Without a terminal there is nobody to answer, so the error points to `link`.
+    """
+    if not sys.stdin.isatty():
+        raise EDError("EcoleDirecte asks its security question again. " + RELINK_MESSAGE)
+    err_console.print(f"\n[bold]Double authentification[/bold]: {question}")
+    for i, prop in enumerate(propositions, 1):
+        err_console.print(f"  {i}. {prop}")
+    return click.prompt("Your answer (number)", type=click.IntRange(1, len(propositions))) - 1
+
+
+def _double_auth(session: requests.Session, x_token: str, twofa_token: str, choose=prompt_choice) -> dict:
     """Answer the 2FA security question and return the ``{cn, cv}`` trust tokens.
+
+    ``choose(question, propositions)`` returns the 0-based index of the answer.
 
     The double-auth endpoint authorises the request with the ``X-Token`` **and**
     ``2FA-Token`` the ``code 250`` login issued as response headers — sending only
@@ -462,11 +485,8 @@ def _double_auth(session: requests.Session, x_token: str, twofa_token: str) -> d
         base64.b64decode(p).decode("utf-8", "replace") for p in data["propositions"]
     ]
 
-    err_console.print(f"\n[bold]Double authentification[/bold]: {question}")
-    for i, prop in enumerate(propositions, 1):
-        err_console.print(f"  {i}. {prop}")
-    choice = click.prompt("Your answer (number)", type=click.IntRange(1, len(propositions)))
-    chosen_b64 = base64.b64encode(propositions[choice - 1].encode("utf-8")).decode()
+    choice = choose(question, propositions)
+    chosen_b64 = base64.b64encode(propositions[choice].encode("utf-8")).decode()
 
     r = session.post(
         f"{BASE}/connexion/doubleauth.awp?verbe=post&v={API_VERSION}",
@@ -481,7 +501,7 @@ def _double_auth(session: requests.Session, x_token: str, twofa_token: str) -> d
     return {"cn": body["data"]["cn"], "cv": body["data"]["cv"]}
 
 
-def authenticate(identifiant: str, password: str, fa: list | None) -> dict:
+def authenticate(identifiant: str, password: str, fa: list | None, choose=prompt_choice) -> dict:
     """Full login flow. Returns a dict ready to persist as config.
 
     Retries the login with freshly-minted ``cn``/``cv`` when the server asks for
@@ -516,7 +536,7 @@ def authenticate(identifiant: str, password: str, fa: list | None) -> dict:
     logger.debug("login #1 code=%s message=%r", body.get("code"), body.get("message"))
     if body.get("code") == CODE_DOUBLE_AUTH:
         # The 250 response issues the X-Token + 2FA-Token the 2FA exchange needs.
-        pair = _double_auth(session, hdrs.get("x-token", ""), hdrs.get("2fa-token", ""))
+        pair = _double_auth(session, hdrs.get("x-token", ""), hdrs.get("2fa-token", ""), choose)
         fa = [{"cn": pair["cn"], "cv": pair["cv"], "uniq": False}]
         body, hdrs = do_login()
         logger.debug("login #2 code=%s message=%r", body.get("code"), body.get("message"))
@@ -543,7 +563,7 @@ def require_login() -> dict:
     """Return the stored config or abort telling the user to run ``login``."""
     cfg = load_config()
     if not cfg.get("token") or not cfg.get("accounts"):
-        raise EDError("Not logged in. Run `ecoledirecte login` first.")
+        raise EDError(RELINK_MESSAGE)
     # Migrate a legacy plaintext password into the Keychain, then strip it from
     # the file — so upgrading the tool secures an old session automatically.
     if cfg.get("password") and store_password(cfg.get("identifiant", ""), cfg["password"]):
@@ -922,8 +942,9 @@ def cli(debug: bool) -> None:
     """EcoleDirecte from the terminal: grades, homework, timetable, messages.
 
     Acts as the logged-in parent or student over EcoleDirecte's private JSON
-    API. Run `login` once interactively (it answers the 2FA question and stores
-    a trusted device); every other command then runs unattended. Every read
+    API. Run `login` once interactively, or `link` without a terminal (a page
+    in the browser): either answers the 2FA question and stores a trusted
+    device, then every other command runs unattended. Every read
     supports --json. `reply` and `send` are dry runs unless --yes is passed.
     """
     logging.basicConfig(
@@ -1050,6 +1071,181 @@ def logout() -> None:
         console.print("[green]✓[/green] Local session and Keychain entry cleared.")
     else:
         console.print("Nothing to clear.")
+
+
+LINK_STATE = CONFIG_DIR / "link.json"
+LINK_TIMEOUT = 300
+LINK_PAGE = """<!doctype html><meta charset=utf-8><title>Connect EcoleDirecte</title>
+<style>body{font:16px system-ui;max-width:28rem;margin:3rem auto;padding:0 1rem}input,button{font:inherit;margin:.3rem 0;width:100%;padding:.5rem;box-sizing:border-box}
+.err{color:#b00020}</style>
+<h1>Connect EcoleDirecte</h1><p id=s>Starting…</p>
+<form id=f hidden><p>Sign in with your EcoleDirecte username and password. They stay on this computer.</p>
+<input id=u placeholder=Identifiant autocomplete=username required><input id=p type=password placeholder="Mot de passe" autocomplete=current-password required>
+<button>Sign in</button></form>
+<div id=q hidden><p id=qt></p><div id=qc></div></div>
+<script>
+const $=id=>document.getElementById(id),post=(path,body)=>fetch(path,{method:'POST',body:JSON.stringify(body)});
+$('f').onsubmit=e=>{e.preventDefault();post('credentials',{identifiant:$('u').value,password:$('p').value});$('f').hidden=true;$('p').value='';$('s').textContent='Signing in…'};
+let shown=null;
+async function tick(){const r=await (await fetch('state')).json();$('s').className=r.error?'err':'';
+ if(r.step==='credentials'){shown=null;$('s').textContent=r.error||'';if($('f').hidden){$('u').value=r.identifiant||'';$('f').hidden=false}}
+ else if(r.step==='question'&&shown!==r.question){shown=r.question;$('s').textContent='EcoleDirecte asks a security question:';$('qt').textContent=r.question;$('qc').replaceChildren(
+   ...r.propositions.map((p,i)=>{const b=document.createElement('button');b.textContent=p;b.onclick=()=>{post('answer',{index:i});$('q').hidden=true;$('s').textContent='Checking…'};return b}));$('q').hidden=false}
+ else if(r.step==='done'){$('s').textContent='Connected as '+r.name+'. You can close this page and go back to Claude.';return}
+ else if(r.step==='failed'){$('s').textContent='Failed: '+r.error;return}
+ setTimeout(tick,1000)}
+tick();
+</script>"""
+
+
+def _save_login(result: dict) -> dict:
+    """Persist a successful login, password included for silent re-login; the primary account."""
+    CONFIG_FILE.with_suffix(".signed-out").unlink(missing_ok=True)
+    save_config(result)
+    return primary_account(result)
+
+
+class LinkFlow:
+    """The sign-in a link page drives: credentials, then the security question if asked.
+
+    Page handlers call `submit_*` from server threads; `run` blocks the helper's main thread.
+    """
+
+    def __init__(self, identifiant: str, fa: list | None, timeout: float = LINK_TIMEOUT):
+        import queue
+
+        self.fa = fa
+        self.deadline = time.monotonic() + timeout
+        self.state: dict = {"step": "credentials", "identifiant": identifiant, "error": None}
+        self.credentials: queue.Queue = queue.Queue()
+        self.answers: queue.Queue = queue.Queue()
+
+    def submit_credentials(self, identifiant: str, password: str) -> None:
+        self.state = {"step": "working"}
+        self.credentials.put((identifiant.strip(), password))
+
+    def submit_answer(self, index: int) -> None:
+        self.state = {"step": "working"}
+        self.answers.put(index)
+
+    def _wait(self, q):
+        import queue
+
+        try:
+            return q.get(timeout=max(0.0, self.deadline - time.monotonic()))
+        except queue.Empty:
+            raise EDError("The connection page timed out; call `link` again.") from None
+
+    def _choose(self, question: str, propositions: list[str]) -> int:
+        self.state = {"step": "question", "question": question, "propositions": propositions}
+        index = self._wait(self.answers)
+        if not 0 <= index < len(propositions):
+            raise EDError("That answer is not one of the choices.")
+        return index
+
+    def run(self, login=authenticate) -> None:
+        """Sign in until it works or the page times out."""
+        while True:
+            identifiant, password = self._wait(self.credentials)
+            try:
+                acc = _save_login(login(identifiant, password, self.fa, choose=self._choose))
+            except EDError as exc:
+                # Wrong password, rejected answer or a server hiccup: the page asks again.
+                self.state = {"step": "credentials", "identifiant": identifiant, "error": exc.message}
+                continue
+            self.state = {"step": "done", "name": f"{acc.get('prenom', '')} {acc.get('nom', '')}".strip()}
+            return
+
+
+def _link_helper() -> None:
+    """Serve the sign-in page on 127.0.0.1 and log in from what it receives."""
+    import secrets
+    import threading
+    import webbrowser
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    cfg = load_config()
+    flow = LinkFlow(os.environ.get("ECOLEDIRECTE_IDENTIFIANT") or cfg.get("identifiant", ""), cfg.get("fa"))
+    # A random path keeps other local pages and processes from reading or driving the page.
+    token = secrets.token_urlsafe(16)
+
+    class Page(BaseHTTPRequestHandler):
+        def _send(self, body: str, kind: str) -> None:
+            data = body.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if self.path == f"/{token}/":
+                self._send(LINK_PAGE, "text/html; charset=utf-8")
+            elif self.path == f"/{token}/state":
+                self._send(json.dumps(flow.state), "application/json")
+            else:
+                self.send_error(404)
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            if self.path == f"/{token}/credentials":
+                flow.submit_credentials(str(body.get("identifiant", "")), str(body.get("password", "")))
+            elif self.path == f"/{token}/answer":
+                flow.submit_answer(int(body.get("index", -1)))
+            else:
+                self.send_error(404)
+                return
+            self._send("{}", "application/json")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Page)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/{token}/"
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    LINK_STATE.touch(mode=0o600, exist_ok=True)
+    LINK_STATE.write_text(json.dumps({"url": url, "pid": os.getpid()}))
+    webbrowser.open(url)
+    try:
+        flow.run()
+    except Exception as exc:  # noqa: BLE001 — shown on the page; the helper has no other reader
+        flow.state = {"step": "failed", "error": getattr(exc, "message", None) or str(exc) or type(exc).__name__}
+    # Let the page poll the final state before the server goes away.
+    time.sleep(5)
+    server.shutdown()
+    LINK_STATE.unlink(missing_ok=True)
+
+
+@cli.command(epilog="\b\nExamples:\n  ecoledirecte link")
+@click.option("--helper", is_flag=True, hidden=True, help="Run the page and login in this process.")
+def link(helper: bool) -> None:
+    """Connect your EcoleDirecte account from a page in the browser; no terminal needed.
+
+    Opens a local page where you sign in and, the first time, answer EcoleDirecte's
+    security question. Returns at once: check the result with `whoami`. The page
+    stays up for 5 minutes. The password is typed on the page, never passed to
+    this command.
+    """
+    if helper:
+        _link_helper()
+        return
+    LINK_STATE.unlink(missing_ok=True)
+    # Detached so the page outlives this command, which an MCP client waits on.
+    subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), "link", "--helper"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+    )
+    for _ in range(100):
+        if LINK_STATE.exists():
+            url = json.loads(LINK_STATE.read_text())["url"]
+            click.echo(
+                f"A page opened in the browser ({url}). Sign in there with your EcoleDirecte username and "
+                "password and answer the security question if asked, then check with `whoami`."
+            )
+            return
+        time.sleep(0.1)
+    raise click.ClickException("the connection page did not start; run `ecoledirecte link --helper` to see why")
 
 
 @cli.command(epilog="\b\nExamples:\n  ecoledirecte notes\n  ecoledirecte notes --student Alice --year 2025-2026 --json")

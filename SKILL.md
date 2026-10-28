@@ -48,11 +48,18 @@ symlink onto the PEP 723 script; `uv` resolves the pinned deps on first run).
 ## Authentication
 
 First login is **interactive** (the 2FA question can't be answered
-non-interactively), so run it in a real terminal:
+non-interactively): in a real terminal, run `login`; without one (Claude
+Desktop, an agent), run `link`:
 
 ```bash
-ecoledirecte login
+ecoledirecte login   # prompts in the terminal
+ecoledirecte link    # opens a local page in the browser and returns at once
 ```
+
+`link` serves a page on 127.0.0.1 under a random path for 5 minutes. The user
+types the identifiant and password there (never in the chat or a command line)
+and clicks the answer to the security question; the session is then saved as
+`login` saves it. Check the result with `whoami`.
 
 It prompts for the identifiant (username) and password — the password is typed
 at a hidden prompt, or read from `$ECOLEDIRECTE_PASSWORD` for automation — then,
@@ -71,7 +78,9 @@ non-macOS it falls back to the mode-600 config file. `login --no-store-password`
 keeps nothing (re-prompts on expiry); `logout` clears both file and Keychain.
 
 Agents should **not** try to bypass or auto-answer the 2FA question — ask the
-user to run `login` once. After that, all read commands work unattended and
+user to run `login` once, or run `link` and let them answer on the page.
+Without a terminal, a command that hits the question again fails with a message
+pointing to `link` instead of prompting. After that, all read commands work unattended and
 auto-re-login when the token expires.
 
 Use `--no-store-password` on `login` to avoid saving the password (the user is
@@ -103,7 +112,7 @@ ecoledirecte whoami --json
 Shows the account (parent vs élève), the reachable students with their ids, and
 each student's **enabled modules**. Use the module list to know whether `notes`,
 `homework`, `timetable` will return data for a given student. If it errors with
-"Not logged in", ask the user to run `login`.
+"Not connected", run `link` (or ask the user to run `login` in a terminal).
 
 ### 2. Read
 

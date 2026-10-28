@@ -1,0 +1,6 @@
+{
+  "display_name": "EcoleDirecte",
+  "description": "Your child's grades, homework, timetable and school messages from EcoleDirecte, in Claude.",
+  "long_description": "Reads your EcoleDirecte account (parent or student): grades, homework, timetable and the school messaging. It can also reply to or send a message to the school, always asking you first.\n\nSetup:\n1. In Claude, ask: \"connect my EcoleDirecte\". A page opens in your browser.\n2. Sign in there with your usual EcoleDirecte username and password. They stay on this computer and are never typed into the chat.\n3. The first time, EcoleDirecte asks a security question (for example your year of birth): click the right answer on the page.\n4. Back in Claude, ask for example: \"what homework is due tomorrow?\".\n\nYou only do this once: the extension signs in again by itself when the session expires.",
+  "platforms": ["darwin"]
+}
